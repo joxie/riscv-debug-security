@@ -11,7 +11,7 @@
 
 ## Problem Statement
 
-[https://docs.google.com/presentation/d/1MBg_zuUHW1GM1VC8hWAxN_Hs4VLzRb24/edit?usp=sharing&ouid=101725320140562793201&rtpof=true&sd=true](https://docs.google.com/presentation/d/1MBg_zuUHW1GM1VC8hWAxN_Hs4VLzRb24/edit?usp=sharing&ouid=101725320140562793201&rtpof=true&sd=true)
+[Problem statement slides](RISCV_Debug_Security_0613.pptx)
 
 ## DM Changes
 
