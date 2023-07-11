@@ -54,11 +54,11 @@ The encoding of dbgprv is shown below. Note that dbgv bit and dbgprv bits follow
 
 The following behaviors will be changed with debug security extension
 
+- Abstract commands accesses to memory and registers will be checked as if it is in privilege specified by dcsr.prv/dcsr.v. Exceptions will set cmderr to 3 (exception).
+- Programming buffer accesses to memory and registers will work as if the it is running at privilege level specified in dcsr.prv/dcsr.v. Exceptions will set cmderr to 3 (exception).
 - Writing dcsr.prv/dcsr.v with a value whose corresponding privilege level is disabled for debug will set cmderr to 6 (security fault error).
 - hartreset/resethaltreq will get security fault error from selected hart if M mode debug is disabled.
 - setkeepalive will get security fault error from selected hart if M mode debug is disabled.
-- Abstract commands accesses to memory and registers will be checked as if it is in privilege specified by dcsr.prv/dcsr.v. Exceptions will set cmderr to 3 (exception).
-- Programming buffer accesses to memory and registers will work as if the it is running at privilege level specified in dcsr.prv/dcsr.v. Exceptions will set cmderr to 3 (exception).
 - If ecall, exceptions or interrupts in debug mode that lands on higher privilege level with external debug disabled, for example, S mode (debug enabled) trap into M mode (debug disabled), the hart will exit debug mode, continue execution in higher privilege level, and re-enter debug mode immediately after returning into current mode.
 - Halt request behaviors changes as the following
     - If debug is disabled in all modes, halt request will return security fault error
