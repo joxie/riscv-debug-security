@@ -6,7 +6,7 @@
  
 ❗Add per command/request control and define its granularity.
 
-❗ndmreset could be useful when the hart is required to be halted precisely at the entry of code to be debugged.
+❗How to efficiently protect ndmreset.
 
 
 # The Proposal
@@ -16,9 +16,9 @@
 [Problem statement slides](RISCV_Debug_Security_0613.pptx)
 
 ## Requirements
-- The debug accesses should be regulated according to the privilege level. 
-- Less privileged debug access cannot tamper resources belongs to more privileged level (e.g. S mode debug privilege level to access M mode CSR).
+- The debug access excpet the ones from System Bus Block should be regulated according to the privilege level (assign a privilege level to debug access). 
 - Less privileged debug access cannot peep/disturb the hart when it runs in higher privilege level (e.g. S mode debug privilege cannot witness/affect the trap handling in M mode).
+- Less privileged debug access cannot tamper resources belongs to more privileged level (e.g. S mode debug privilege level to access M mode CSR).
 - The ability to lock down debug accesses for ROM and enables it for Non-ROM execution (e.g. both ROM and Non-ROM can live in M mode, but they should be granted for debug differently).
 
 ## DM Changes
@@ -50,7 +50,7 @@ When the System Bus Access is denied by IOPMP, WG, etc., the sberror is set to 6
 
 ### Machine Debug Security Control and Status Register **mdbgsec**
 
-This register is WARL in M mode and RO in debug mode for all privilege levels.
+This CSR is WARL in M mode and RO in debug mode for all privilege levels.
 
 Bit 0~3 of mdbgsec is used to control the maximum privilege level in debug mode which applies abstract commands and program buffer.
 
