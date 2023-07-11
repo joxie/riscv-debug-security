@@ -21,31 +21,6 @@
 - Less privileged debug access cannot tamper resources belongs to more privileged level (e.g. S mode debug privilege level to access M mode CSR).
 - The ability to lock down debug accesses for ROM and enables it for Non-ROM execution (e.g. both ROM and Non-ROM can live in M mode, but they should be granted for debug differently).
 
-## DM Changes
-
-### Non-debug-module reset 
-
-ndmreset is a feature to reset the whole system except DM. This may become an attack surface if it is not carefully designed and analyzed in threat model. 
-
-A example is that OEM adversaries can use ndmreset to reset the entire SOC when SOC boot rom is running. SOC boot rom usually interacts with external devices such as SPI, flash and etc. If the boot rom is interrupted and restarted in the middle of execution, it might lead to severe result.
-
-It is recommended that SOC vendors do not implement ndmreset, or use a life-cycle fuse to disable ndmreset. 
-
-### Debugger access memory
-
-Debugger accessing memory via System Bus Access block shall always be checked by IOPMP, WG, or other equivalent hardware protection mechanism.
-
-### Error reporting
-
-- Add a new cause in cmderr (6, previously reserved) to indicate a security fault. 
-- Add a new cause in sberror (6, previously reserved) to indicate a security fault in DM system bus. 
-
-Abstract commands, halt reqeusts or reset request that violate debug security protections will set cmderr to 6 (security fault). 
-
-Exceptions due to privilege violation (e.g. accessing M mode resource with S mode privilege) will set cmderr to 3 (exception). 
-
-When the System Bus Access is denied by IOPMP, WG, etc., the sberror is set to 6 (security fault).
-
 ## Core changes
 
 ### Machine Debug Security Control and Status Register **mdbgsec**
@@ -134,6 +109,30 @@ Core debug registers are still accessible in debug mode regardless of debug priv
 | nmip | Requires M mode debug |
 | v, prv | Cannot exceed privilege defined in mdbgsec |
 
+## DM Changes
+
+### Non-debug-module reset 
+
+ndmreset is a feature to reset the whole system except DM. This may become an attack surface if it is not carefully designed and analyzed in threat model. 
+
+A example is that OEM adversaries can use ndmreset to reset the entire SOC when SOC boot rom is running. SOC boot rom usually interacts with external devices such as SPI, flash and etc. If the boot rom is interrupted and restarted in the middle of execution, it might lead to severe result.
+
+It is recommended that SOC vendors do not implement ndmreset, or use a life-cycle fuse to disable ndmreset. 
+
+### Debugger access memory
+
+Debugger accessing memory via System Bus Access block shall always be checked by IOPMP, WG, or other equivalent hardware protection mechanism.
+
+### Error reporting
+
+- Add a new cause in cmderr (6, previously reserved) to indicate a security fault. 
+- Add a new cause in sberror (6, previously reserved) to indicate a security fault in DM system bus. 
+
+Abstract commands, halt reqeusts or reset request that violate debug security protections will set cmderr to 6 (security fault). 
+
+Exceptions due to privilege violation (e.g. accessing M mode resource with S mode privilege) will set cmderr to 3 (exception). 
+
+When the System Bus Access is denied by IOPMP, WG, etc., the sberror is set to 6 (security fault).
 
 ### Trigger
  
