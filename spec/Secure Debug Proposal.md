@@ -84,7 +84,7 @@ The following behaviors will be changed with debug security extension
 - setkeepalive will get security fault error from selected hart if M mode debug is disabled.
 - Abstract commands accesses to memory and registers will be checked as if it is in privilege specified by dcsr.prv/dcsr.v. Exceptions will set cmderr to 3 (exception).
 - Programming buffer accesses to memory and registers will work as if the it is running at privilege level specified in dcsr.prv/dcsr.v. Exceptions will set cmderr to 3 (exception).
-- Ecall, exceptions or interrupts that land on higher privilege level but disallowed for debug will exit debug mode, continue execution in higher privilege level, and re-enter debug mode immediately after mret/sret.
+- If ecall, exceptions or interrupts in debug mode that lands on higher privilege level with external debug disabled, for example, S mode (debug enabled) trap into M mode (debug disabled), the hart will exit debug mode, continue execution in higher privilege level, and re-enter debug mode immediately after returning into current mode.
 - Halt request behaviors changes as the following
     - If debug is disabled in all modes, halt request will return security fault error
     - if debug is enabled in any modes, halt request will be pending till the hart can be halted
