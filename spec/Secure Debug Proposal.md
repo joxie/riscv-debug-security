@@ -6,7 +6,7 @@
  
 ❗Add per command/request control and define its granularity.
 
-❗ndmreset could be useful when the hart is required to be halted precisely at the entry of code to be debugged.
+❗Reset operations need careful protection.
 
 
 # The Proposal
@@ -22,14 +22,6 @@
 - The ability to lock down debug accesses for ROM and enables it for Non-ROM execution (e.g. both ROM and Non-ROM can live in M mode, but they should be granted for debug differently).
 
 ## DM Changes
-
-### Non-debug-module reset 
-
-ndmreset is a feature to reset the whole system except DM. This may become an attack surface if it is not carefully designed and analyzed in threat model. 
-
-A example is that OEM adversaries can use ndmreset to reset the entire SOC when SOC boot rom is running. SOC boot rom usually interacts with external devices such as SPI, flash and etc. If the boot rom is interrupted and restarted in the middle of execution, it might lead to severe result.
-
-It is recommended that SOC vendors do not implement ndmreset, or use a life-cycle fuse to disable ndmreset. 
 
 ### Debugger access memory
 
@@ -80,7 +72,10 @@ The encoding of dbgprv is shown below. Note that dbgv bit and dbgprv bits follow
 The following behaviors will be changed with debug security extension
 
 - Writing dcsr.prv/dcsr.v with a value whose corresponding privilege level is disabled for debug will set cmderr to 6 (security fault error).
-- hartreset/resethaltreq will get security fault error from selected hart if M mode debug is disabled.
+- hartreset/resethaltreq/ndmreset will get security fault error from selected hart if M mode debug is disabled.
+
+> 💡 The above-mentioned reset operations will either reset the harts or the whole system.  However, the reset is a critical operation and it needs careful protection. If the they are not coupled with M mode accessibility, there must be some sort of rules enforced. 
+
 - setkeepalive will get security fault error from selected hart if M mode debug is disabled.
 - Abstract commands accesses to memory and registers will be checked as if it is in privilege specified by dcsr.prv/dcsr.v. Exceptions will set cmderr to 3 (exception).
 - Programming buffer accesses to memory and registers will work as if the it is running at privilege level specified in dcsr.prv/dcsr.v. Exceptions will set cmderr to 3 (exception).
