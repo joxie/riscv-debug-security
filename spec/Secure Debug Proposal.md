@@ -15,6 +15,12 @@
 
 [Problem statement slides](RISCV_Debug_Security_0613.pptx)
 
+## Requirements
+- The debug accesses should be regulated according to the privilege level. 
+- Less privileged debug access cannot tamper resources belongs to more privileged level (e.g. S mode debug privilege level to access M mode CSR).
+- Less privileged debug access cannot peep/disturb the hart when it runs in higher privilege level (e.g. S mode debug privilege cannot witness/affect the trap handling in M mode).
+- The ability to lock down debug accesses for ROM and enables it for Non-ROM execution (e.g. both ROM and Non-ROM can live in M mode, but they should be granted for debug differently).
+
 ## DM Changes
 
 ### Non-debug-module reset 
