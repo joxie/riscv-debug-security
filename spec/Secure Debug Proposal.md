@@ -6,47 +6,51 @@
  
 ❗Add per command/request control and define its granularity.
 
+❗ndmreset could be useful when the hart is required to be halted precisely at the entry of code to be debugged.
+
 
 # The Proposal
 
 ## Problem Statement
 
-[Problem statement slides](RISCV_Debug_Security_0613.pptx)
+[https://docs.google.com/presentation/d/1MBg_zuUHW1GM1VC8hWAxN_Hs4VLzRb24/edit?usp=sharing&ouid=101725320140562793201&rtpof=true&sd=true](https://docs.google.com/presentation/d/1MBg_zuUHW1GM1VC8hWAxN_Hs4VLzRb24/edit?usp=sharing&ouid=101725320140562793201&rtpof=true&sd=true)
 
 ## DM Changes
 
 ### Non-debug-module reset 
 
-ndmreset is a feature to enable DM to reset the whole system except DM. This may become an attack surface if not carefully designed and analyzed in threat model analysis. 
+ndmreset is a feature to reset the whole system except DM. This may become an attack surface if it is not carefully designed and analyzed in threat model. 
 
-One potential example is that if SOC boot rom usually interacts with external devices such as SPI or flash, if an OEM adversary can use ndmreset to reset the entire SOC when SOC boot rom is running, something bad may happen.
+A example is that OEM adversaries can use ndmreset to reset the entire SOC when SOC boot rom is running. SOC boot rom usually interacts with external devices such as SPI, flash and etc. If the boot rom is interrupted and restarted in the middle of execution, it might lead to severe result.
 
-We recommend to SOC vendors to not implement ndmreset, or use a life-cycle fuse to disable ndmreset. 
+It is recommended that SOC vendors do not implement ndmreset, or use a life-cycle fuse to disable ndmreset. 
 
 ### Debugger access memory
 
-Debug access memory shall always be checked by IOPMP, WG, or other equivalent hardware protection mechanism.
+Debugger accessing memory via System Bus Access block shall always be checked by IOPMP, WG, or other equivalent hardware protection mechanism.
 
 ### Error reporting
 
 - Add a new cause in cmderr (6, previously reserved) to indicate a security fault. 
-- Add a new cuase in sberr (6, previously reserved) to indicate a security fault in Debug Module's system bus. 
+- Add a new cause in sberror (6, previously reserved) to indicate a security fault in DM system bus. 
 
-Abstract commands, halt reqeusts or reset request that violates debug security protections will get the cmderr 6 (secrity fault). 
+Abstract commands, halt reqeusts or reset request that violate debug security protections will set cmderr to 6 (security fault). 
 
-Exceptions due to privilege violation (e.g. accessing M mode resource with S mode privilege) will get cmderr 3 (exception). 
+Exceptions due to privilege violation (e.g. accessing M mode resource with S mode privilege) will set cmderr to 3 (exception). 
 
-When the system bus access is denied by IOPMP, WG, etc., the sberr is set to 6 (secrity fault).
+When the System Bus Access is denied by IOPMP, WG, etc., the sberror is set to 6 (security fault).
 
 ## Core changes
 
-### Machine Debug Security Control and Status Register **(mdbgsec)**
+### Machine Debug Security Control and Status Register **mdbgsec**
 
-This register is WARL in M mode and RO in debug mode and external debugger 
-****
-Bit0~3 of mdbgsec (dbgprv) is used to control the maximum privilege level of external debugger and programming buffer.
+This register is WARL in M mode and RO in debug mode for all privilege levels.
 
-The encoding of dbgprv is shown below, note that v bit and prv bit follows the same encoding as dcsr.v and dcsr.prv, to simplify hardware implementation
+Bit 0~3 of mdbgsec is used to control the maximum privilege level in debug mode which applies abstract commands and program buffer.
+
+> 💡 The hart may be halted in a privilege level which is not the maximum level in debug mode. The CSR is made RO in debug mode for debugger in any privilege levels to determine its maximum privilege level. 
+
+The encoding of dbgprv is shown below. Note that dbgv bit and dbgprv bits follow the same encoding as dcsr.v and dcsr.prv to simplify hardware implementation
 
 | H ext. supported | dbgen (bit3) | dbgv (bit2) | dbgprv (bit0-1) | Max debug prv mode |
 | --- | --- | --- | --- | --- |
@@ -59,40 +63,39 @@ The encoding of dbgprv is shown below, note that v bit and prv bit follows the s
 | Yes | 1 | 0 | 1 | U/VU/VS/HS mode external debug enabled  |
 | Yes | 1 | 0 | 3 | U/VU/VS/HS/M mode external debug enabled  |
 | Yes | 1 | 1 | 0 | VU mode external debug enabled  |
-| Yes | 1 | 1 | 1 | VS mode external debug enabled |
+| Yes | 1 | 1 | 1 | VS/VU mode external debug enabled |
 
 
-> 💡 The default value of mdbgsec.dbgprv is implementation specific. Reset to reset to 0 (all modes debug disabled) and FW or ROM code to enable debug is most secured, but that means debuggability is lost before debug is enabled and halt-after-reset is also useless. A good practice to solve is problem is to use a lifecycle fuse to control the the default value of mdbgsec.dbgprv via an input port to the hart so developers can still debug ROM code in development phase and disable afterwards
+> 💡 The default value of mdbgsec.dbgprv/mdbgsec.dbgen is implementation specific. Resetting it to 0 (all privilege levels disabled for debug) and letting FW or ROM code enable debug is the most secured way. But it means debugability is lost until it is enabled and halt-after-reset is also useless. A good practice to solve this problem is to use a life-cycle fuse that controls the default value of mdbgsec.dbgprv and mdbgsec.dbgen via an input port to the hart. Developers can debug ROM code in development phase and disable it afterwards.
 
-❓Is there a need to allow S/H mode to enable/disable external debug for less privilege modes? NV’s current preference is no (simplify spec, reduce attack surface)
+❓Is there a need to allow S/H mode to enable/disable external debug for less privilege levels? NV’s current preference is no (simplify spec, reduce attack surface)
 
 
-Below behaviors will be changed with debug security extension
+The following behaviors will be changed with debug security extension
 
-- Writing dcsr.prv with a value that corresponding privilege mode debug is disabled will return a security fault error
-- hartreset/resethaltreq will get security fault error from selected hart if M debug is disabled
-- setkeepalive will get security fault error from selected hart if M debug is disabled
-- Abstract cmd access to memory will be checked as if it is in dcsr.prv, illegal access will get security fault error from selected hart
-- Programming buffer access to memory and registers will work as if the it is running at privilege mode specified in dcsr.prv
-- Ecall or exception or interrupt… that lands on higher privilege mode but debug is DISABLED will exit debug mode, continue execution in higher privilege mode, and re-enter debug mode immediately after return
-- Halt request changes to below.
+- Writing dcsr.prv/dcsr.v with a value whose corresponding privilege level is disabled for debug will set cmderr to 6 (security fault error).
+- hartreset/resethaltreq will get security fault error from selected hart if M mode debug is disabled.
+- setkeepalive will get security fault error from selected hart if M mode debug is disabled.
+- Abstract commands accesses to memory and registers will be checked as if it is in privilege specified by dcsr.prv/dcsr.v. Exceptions will set cmderr to 3 (exception).
+- Programming buffer accesses to memory and registers will work as if the it is running at privilege level specified in dcsr.prv/dcsr.v. Exceptions will set cmderr to 3 (exception).
+- Ecall, exceptions or interrupts that land on higher privilege level but disallowed for debug will exit debug mode, continue execution in higher privilege level, and re-enter debug mode immediately after mret/sret.
+- Halt request behaviors changes as the following
     - If debug is disabled in all modes, halt request will return security fault error
     - if debug is enabled in any modes, halt request will be pending till the hart can be halted
+   
+> 💡 The debugger could discover the debugability of the hart by issuing halt request and checking the error status. If the halt request responses with an error, it means the hart is not yet granted for debug. Otherwise, the halt request succeeds immediately or will be pending till the hart enter a debugable privilege level. Since the halt request is asynchronous, the hart must be put in an infinite loop at the entry of code to be debugged. The debugger could afterwards halt the hart precisely and jump out of the loop in debug mode.
+
+Bit 4 of mdbgsec (relaxprivdis) controls whether external debugger can bypass M mode protection by setting abstractcs.relaxedpriv. Value 1 means relaxpriv is prohibited to be set even if the debug privilege level is 3 (M mode). This bit is sticky.
 
 
-bit4 of mdbgsec (relaxprivdis) controls whether external debugger can bypass M mode protection by setting abstractcs.relaxedpriv. 1 means relaxpriv cmd is prohibited even if dbgpriv is M. This bit is sticky.
+> 💡 relaxpriv may be useful when debugging ROM and M mode FW but it shall be disabled when debugging runtime software such as OS. In this case, we need a new knob to achieve the configuration that M mode debug is enabled but relaxedpriv is prohibited. ROM should make sure relaxprivdis is set to 1 when a PMP entry is locked by setting pmpcfg*.L to 1. 
 
 
-> 💡 Rationale of relaxprivdis - relaxpriv maybe useful in debugging ROM and M mode FW but shall be disabled when debugging runtime software such as OS. In that case we need a new nob here to represent the case where M-mode debug is ON but relaxedpriv is prohibited.
+Bit 5 of mdbgsec (extrigen) controls whether the external triggers of Trigger Module are enabled. Setting up triggers of type 7 takes no effect if the mdbgsec.extrigen is 0.
 
-ROM should make sure relaxprivdis is disabled when setting PMP.L to 1
+Bits 8-11 of mdbgsec controls RISC-V trace 
 
-
-Bit5 of mdbgsec (extrigen) controls whether the external triggers are enabled. Setting up triggers of type 7 takes no effect if the mdbgsec.extrigen is 0.
-
-Bit8-11 of mdbgsec (tracectl) controls RISC-V trace 
-
-| H ext. supported | en (bit3) | v (bit2) | prv (bit0-1) | Trace enabled |
+| H ext. supported | trcen (bit3) | trcv (bit2) | trcprv (bit0-1) | Trace enabled |
 | --- | --- | --- | --- | --- |
 | No | 0 | 0 | don’t-care | Trace disabled |
 | No | 1 | 0 | 0 | U mode trace enabled |
@@ -105,9 +108,11 @@ Bit8-11 of mdbgsec (tracectl) controls RISC-V trace
 | Yes | 1 | 1 | 0 | VU mode trace enabled |
 | Yes | 1 | 1 | 1 | VU/VS mode trace enabled |
 
+> 💡 Similar to mdbgsec.dbgprv/mdbgsec.dbgen, the default value of mdbgsec.trcprv/mdbgsec.trcen is implementation specific.
+
 ### Core Debug Register
 
-Core debug registers are still accessible in debug mode regardless of debug privilege mode control, with restrictions listed below
+Core debug registers are still accessible in debug mode regardless of debug privilege level, with restrictions listed below
 
 | Field | Change |
 | --- | --- |
@@ -126,7 +131,7 @@ Core debug registers are still accessible in debug mode regardless of debug priv
 
 ### Trigger
  
-Trigger programing registers are still accessible in debug mode regardless to debug privilege mode control.
+A subset of trigger programing registers are still accessible in debug mode regardless to debug privilege level control.
 
 | Always allowed in debug mode | Access wtih debug privilege  |
 | ---------------------------- | -----------------------------|
@@ -136,21 +141,23 @@ Trigger programing registers are still accessible in debug mode regardless to de
 | tdata3(0x7a3)                | mcontext(0x7a8)              |
 | tinfo(0x7a4)                 | mscontext(0x7aa)             |
 
-The trigger module behaves differently to on one hand leverage the trigger in debug mode, on the other hand protect the secure code from the external debugger. 
+The trigger module behaves differently with debug security extension as the following
 
-- Triggers with action = 1 (enter debug mode) will only fire if external debug is enabled for corresponding privilege mode
-- The trigger to start/stop/notify trace module succeeds only if the hart running privilege mode is enable for trace in mdbgctl.tracectl 
-- In debug mode, triggers could not be enabled for privileges higher than the one specified in mdbgsec.dbgprv.
-- If the trigger is already enabled for higher privilege mode (by hart) than the ones allowed in mdbgsec.dbgprv/mdbgsec.tracectl, it could not be altered in debug mode and tdata1/2/3 return 0x0 in a read access.
+- Triggers with action = 1 (enter debug mode) will only fire if debug is enabled for corresponding privilege level.
+- The trigger to start/stop/notify trace module succeeds only if the privilege level of the hart is enable for trace in mdbgctl.trcprv/mdbgctl.trcv.
+- In debug mode, triggers cannot be enabled for privilege levels higher than the one specified in mdbgsec.dbgprv/mdbgsec.dbgv.
+- If the trigger is already enabled for higher privilege level (by hart) than the ones allowed in mdbgsec, it could not be altered in debug mode and tdata1/2/3 return 0x0 in read accesses.
 
-> 💡 Rationale: There might be the cases, though rare, that native debugger set trigger in high privilege mode while external debugger is restriced to reletive low privilege mode accessibility. We would like to avoid that external debugger corrupts the trigger setting in high privilege mode of native debbugger, which makes them othogonal.
+> 💡 There might be the cases, though rare, that native debugger and external debugger co-exists. The native debugger might set a trigger in high privilege level while external debugger is restricted to relative low privilege level accessibility. This rule avoid that the external debugger corrupts the trigger setting in high privilege level of native debugger. Both debuggers should be orthogonal.
 
 
-- If a trigger chain is set up (by hart), the trigger in the chain can only be modified by M mode debug privilege. 
+- The trigger chain should be protected properly by either of them
+	- The privilege level of the trigger chain is determined by the highest privilege level among the chain. The chain could only be modified if debug is enable for this privilege level.
+	- Triggers in a chain can only be modified by privilege level 3 when in debug mode.  
 
->💡 Rationale: The restriction is a trade-off between usablity and hardware complexity. The integrity of the trigger chain set by hart need to be assured when external debugger is going to leverage triggers. There might be the case that the triggers are chained up across privilege modes (e.g. from S mode to M mode), while the external debugger could only aquire S mode. The external debugger should not twist the chain since it might slience or mis-fire the breakpoint exception in M mode. However, it is hard for implementation the check the whole chain when configuring trigger in a chian. To simply it, only M mode debug privilge can mofify triggers in a chian. 
+>💡 This is a trade-off between usability and hardware complexity. The integrity of the trigger chain set by hart need to be assured when external debugger is going to leverage triggers. There might be the case that the triggers are chained up across privilege levels (e.g. from S mode to M mode), while the external debugger could only acquire S mode privilege. The external debugger should not twist the chain since it might silence or mis-fire the breakpoint exception in M mode. However, it is hard for implementation the check the whole chain when configuring trigger in a chain. To simply it, only M mode debug privilege can modify triggers in a chain. 
 
-tdata1.m/s/u/vs/vu enables triggers for privilege modes 
+tdata1.m/s/u/vs/vu accessibility in different privilege levels 
 ---
 | dbgen (bit3) | dbgv (bit2) | dbgprv (bit0-1) | configurable fields from debug mode |
 | ------------ | ----------- | --------------- | ----------------------------------- |
@@ -176,4 +183,4 @@ tdata3(textra32,textra64) for extra configuration
 
 ❗ This feature is optional and the field mhselect mixes the privilege control of M and H
 
->💡 The external debugger could determine the accessiblity of the CSR fields by write a spefic value and read back it. If the value matches, the field is configurable for external debugger 
+>💡 The CSR field accessibility is associated with privilege levels. The external debugger could determine the accessibility of the CSR fields by writing a specific value and reading it back. If the value matches, the field is configurable for external debugger 
