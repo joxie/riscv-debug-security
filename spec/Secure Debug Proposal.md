@@ -50,7 +50,7 @@ The encoding of dbgprv is shown below. Note that dbgv bit and dbgprv bits follow
 
 > 💡 The default value of mdbgsec.dbgprv/mdbgsec.dbgen is implementation specific. Resetting it to 0 (all privilege levels disabled for debug) and letting FW or ROM code enable debug is the most secured way. But it means debugability is lost until it is enabled and halt-after-reset is also useless. A good practice to solve this problem is to use a life-cycle fuse that controls the default value of mdbgsec.dbgprv and mdbgsec.dbgen via an input port to the hart. Developers can debug ROM code in development phase and disable it afterwards.
 
-> 💡 The M mode is responsible to manage its own debugablitlity since it is most-privileged mode. The S mode debugablity is granted by M mode. The secure monitor in M mode could enforce different policy for each S mode context during context switch, which contrains the debug access within a debugable context. 
+> 💡 The M mode is responsible to manage its own debugablitlity since it is the most privileged mode. The S mode debugablity is granted by M mode. The secure monitor in M mode could enforce different policies for each S mode context during context switch, which constrains debug accesses within the debugable context. 
 
 ❓Is there a need to allow S/H mode to enable/disable external debug for less privilege levels? NV’s current preference is no (simplify spec, reduce attack surface)
 
