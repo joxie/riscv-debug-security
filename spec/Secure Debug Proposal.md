@@ -17,7 +17,7 @@
 
 ## Requirements
 - The debug accesses excpet the ones from System Bus Block should be regulated according to the privilege levels (assigning a privilege level to debug access). 
-- Less privileged debug accesses cannot peep/interrupt/modify the hart when it runs in higher privilege level (e.g. S mode debug privilege cannot read/write/halt the trap handler or context switch in M mode).
+- Less privileged debug accesses cannot peep/interrupt the hart when it runs in higher privilege level (e.g. S mode debug privilege cannot read/halt the trap handler or context switch in M mode).
 - Less privileged debug accesses cannot tamper resources belongs to more privileged level (e.g. S mode debug privilege level to access M mode CSR or memory granted to M mode by PMP).
 - The debug access can be conditional enabled for the same privilege level. (e.g. both ROM and Non-ROM can live in M mode, but the debugability should be granted differently).
 - Memory accesses from System Bus Blcok shall be regulated by IOPMP or something equivalent.
@@ -56,15 +56,16 @@ The encoding of dbgprv is shown below. Note that dbgv bit and dbgprv bits follow
 
 The following behaviors will be changed with debug security extension
 
+- Halt request behaviors changes as the following
+    - If debug is disabled in all modes, halt request will return security fault error （cmderr set to 6)
+    - if debug is enabled in any modes, halt request will be pending till the hart can be halted
 - Abstract commands accesses to memory and registers will be checked as if it is in privilege specified by dcsr.prv/dcsr.v. Exceptions will set cmderr to 3 (exception).
 - Programming buffer accesses to memory and registers will work as if the it is running at privilege level specified in dcsr.prv/dcsr.v. Exceptions will set cmderr to 3 (exception).
-- Writing dcsr.prv/dcsr.v with a value whose corresponding privilege level is disabled for debug will set cmderr to 6 (security fault error).
+- Writing dcsr.prv/dcsr.v with a value whose corresponding privilege level is disabled for debug will get security fault error.
 - hartreset/resethaltreq will get security fault error from selected hart if M mode debug is disabled.
 - setkeepalive will get security fault error from selected hart if M mode debug is disabled.
 - If ecall, exceptions or interrupts in debug mode that lands on higher privilege level with external debug disabled, for example, S mode (debug enabled) trap into M mode (debug disabled), the hart will exit debug mode, continue execution in higher privilege level, and re-enter debug mode immediately after returning into current mode.
-- Halt request behaviors changes as the following
-    - If debug is disabled in all modes, halt request will return security fault error
-    - if debug is enabled in any modes, halt request will be pending till the hart can be halted
+
    
 > 💡 The debugger could discover the debugability of the hart by issuing halt request and checking the error status. If the halt request responses with an error, it means the hart is not yet granted for debug. Otherwise, the halt request succeeds immediately or will be pending till the hart enter a debugable privilege level. Since the halt request is asynchronous, the hart must be put in an infinite loop at the entry of code to be debugged. The debugger could afterwards halt the hart precisely and jump out of the loop in debug mode.
 
