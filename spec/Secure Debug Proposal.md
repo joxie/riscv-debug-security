@@ -8,6 +8,9 @@
 
 ❗How to efficiently protect ndmreset.
 
+❗The implementation can optionally add life-cycle fuses to disable debug according to WID
+
+❗Add shadow CSRs for trigger and dcsr, other than expose the existing CSR as WLRL. 
 
 # The Proposal
 
@@ -16,11 +19,11 @@
 [Problem statement slides](RISCV_Debug_Security_0613.pptx)
 
 ## Requirements
-- The debug accesses excpet the ones from System Bus Block should be regulated according to the privilege levels (assigning a privilege level to debug access). 
-- Less privileged debug accesses cannot peep/interrupt the hart when it runs in higher privilege level (e.g. S mode debug privilege cannot read/halt the trap handler or context switch in M mode).
-- Less privileged debug accesses cannot tamper resources belongs to more privileged level (e.g. S mode debug privilege level to access M mode CSR or memory granted to M mode by PMP).
-- The debug access can be conditional enabled for the same privilege level. (e.g. both ROM and Non-ROM can live in M mode, but the debugability should be granted differently).
-- Memory accesses from System Bus Blcok shall be regulated by IOPMP or something equivalent.
+- The debug accesses except the ones from System Bus Block should be regulated according to the privilege levels (assigning a privilege level to debug access). 
+- Less privileged debug accesses cannot peep/interrupt the hart when it runs in higher privilege level (e.g., S mode debug privilege cannot read/halt the trap handler or context switch in M mode).
+- Less privileged debug accesses cannot tamper resources belongs to more privileged level (e.g., S mode debug privilege level to access M mode CSR or memory granted to M mode by PMP).
+- The debug access can be conditional enabled for the same privilege level. (e.g., both ROM and Non-ROM can live in M mode, but the debugability should be granted differently).
+- Memory accesses from System Bus Block shall be regulated by IOPMP or something equivalent.
 
 ## Core changes
 
@@ -48,9 +51,9 @@ The encoding of dbgprv is shown below. Note that dbgv bit and dbgprv bits follow
 | Yes | 1 | 1 | 1 | VS/VU mode external debug enabled |
 
 
-> 💡 The default value of mdbgsec.dbgprv/mdbgsec.dbgen is implementation specific. Resetting it to 0 (all privilege levels disabled for debug) and letting FW or ROM code enable debug is the most secured way. But it means debugability is lost until it is enabled and halt-after-reset is also useless. A good practice to solve this problem is to use a life-cycle fuse that controls the default value of mdbgsec.dbgprv and mdbgsec.dbgen via an input port to the hart. Developers can debug ROM code in development phase and disable it afterwards.
+> 💡 The default value of mdbgsec.dbgprv/mdbgsec.dbgen is implementation specific. Resetting it to 0 (all privilege levels disabled for debug) and letting FW or ROM code enable debug is the most secured way. But it means debugability is lost until it is enabled and halt-after-reset is also useless. A good practice to solve this problem is to use a life-cycle fuse that controls the default value of mdbgsec.dbgprv and mdbgsec.dbgen via an input port to the hart. Developers can debug ROM code in development phase and disable it afterwards. Moreover, when the WG extension is adopted, another set of fuses can be implemented to disable debug according to WID. For example, if the fuse for WID n is burnt, the mdbgsec.dbgen is switched to fixed value 0x0 when WID is set to n. As another WID is assigned, the mdbgsec.dbgen will be switched back.
 
-> 💡 The M mode is responsible to manage its own debugablitlity since it is the most privileged mode. The S mode debugablity is granted by M mode. The secure monitor in M mode could enforce different policies for each S mode context during context switch, which constrains debug accesses within the debugable context. 
+> 💡 The M mode is responsible to manage its own debugability since it is the most privileged mode. The S mode debugability is granted by M mode. The secure monitor in M mode could enforce different policies for each S mode context during context switch, which constrains debug accesses within the debuggable partition. 
 
 ❓Is there a need to allow S/H mode to enable/disable external debug for less privilege levels? NV’s current preference is no (simplify spec, reduce attack surface)
 
@@ -64,19 +67,10 @@ The following behaviors will be changed with debug security extension
 - Writing dcsr.prv/dcsr.v with a value whose corresponding privilege level is disabled for debug will get security fault error.
 - hartreset/resethaltreq will get security fault error from selected hart if M mode debug is disabled.
 - setkeepalive will get security fault error from selected hart if M mode debug is disabled.
-- If ecall, exceptions or interrupts in debug mode that lands on higher privilege level with external debug disabled, for example, S mode (debug enabled) trap into M mode (debug disabled), the hart will exit debug mode, continue execution in higher privilege level, and re-enter debug mode immediately after returning into current mode.
+- If exceptions or interrupts occurs during single stepping that lands on higher privilege level with debug disabled, for example, S mode (debug enabled) trap into M mode (debug disabled), the hart will continue execution in higher privilege level, and re-enter debug mode immediately after returning debuggable privilege level.
 
+> 💡 The halt group will halt all harts in the same group if anyone halts. There might be the case that different harts have varied debug control policies and some harts may not run in debuggable privilege levels. The halt requests issued by halt group will be pending till the hart enter a debuggable privilege level. 
    
-> 💡 The debugger could discover the debugability of the hart by issuing halt request and checking the error status. If the halt request responses with an error, it means the hart is not yet granted for debug. Otherwise, the halt request succeeds immediately or will be pending till the hart enter a debugable privilege level. Since the halt request is asynchronous, the hart must be put in an infinite loop at the entry of code to be debugged. The debugger could afterwards halt the hart precisely and jump out of the loop in debug mode.
-
-Bit 4 of mdbgsec (relaxprivdis) controls whether external debugger can bypass M mode protection by setting abstractcs.relaxedpriv. Value 1 means relaxpriv is prohibited to be set even if the debug privilege level is 3 (M mode). This bit is sticky.
-
-
-> 💡 relaxpriv may be useful when debugging ROM and M mode FW but it shall be disabled when debugging runtime software such as OS. In this case, we need a new knob to achieve the configuration that M mode debug is enabled but relaxedpriv is prohibited. ROM should make sure relaxprivdis is set to 1 when a PMP entry is locked by setting pmpcfg*.L to 1. 
-
-
-Bit 5 of mdbgsec (extrigen) controls whether the external triggers of Trigger Module are enabled. Setting up triggers of type 7 takes no effect if the mdbgsec.extrigen is 0.
-
 Bits 8-11 of mdbgsec controls RISC-V trace 
 
 | H ext. supported | trcen (bit3) | trcv (bit2) | trcprv (bit0-1) | Trace enabled |
@@ -92,9 +86,20 @@ Bits 8-11 of mdbgsec controls RISC-V trace
 | Yes | 1 | 1 | 0 | VU mode trace enabled |
 | Yes | 1 | 1 | 1 | VU/VS mode trace enabled |
 
-> 💡 Similar to mdbgsec.dbgprv/mdbgsec.dbgen, the default value of mdbgsec.trcprv/mdbgsec.trcen is implementation specific.
+> 💡 Similar to mdbgsec.dbgprv/mdbgsec.dbgen, the value of mdbgsec.trcprv/mdbgsec.trcen could be enforced by hardware fusing. 
+ 
+Bits 4-17 of mdbgsec:
 
-### Core Debug Register (dcsr)
+| Field          | Bit | Description                                                                                                          | Access         | Reset |
+| -------------- | --- | -------------------------------------------------------------------------------------------------------------------- | -------------- | ----- |
+| trclock        | 7   | 0: trcen, trcv, trcrprv are allowed to program <br> 1: trcen, trcv, trcprv values are locked and no more programable | Write 1 sticky | 0     |
+| dbglock        | 6   | 0: dbgen, dbgv, dbgprv are allowed to program <br> 1: dbgen, dbgv, dgbprv values are locked and no more programable  | Write 1 sticky | 0     |
+| extrigdis      | 5   | 0: external triggers are enabled <br>1: external triggers are disabled                                               | R/W            | 0     |
+| relaxedprivdis | 4   | 0: relaxedpriv performs relaxed set of permission checks <br>1: relaxedpriv takes no effect                          | R/W            | 0     |
+
+> 💡 relaxedpriv may be useful when debugging ROM and M mode FW but it shall be disabled when debugging runtime software such as OS. In this case, we need a new knob to achieve the configuration that M mode debug is enabled but relaxedpriv is prohibited. ROM should make sure relaxedprivdis is set to 1 when a PMP entry is locked by setting pmpcfg*.L to 1. 
+
+### Debug Control and Status (dcsr)
 
 Core debug registers are still accessible in debug mode regardless of debug privilege level, with restrictions listed below
 
@@ -118,6 +123,15 @@ Core debug registers are still accessible in debug mode regardless of debug priv
 
 ## DM Changes
 
+### Debug Module Status (dmstatus)
+
+| Field      | Bit | Description                                                                                               | Access | Reset |
+| ---------- | --- | --------------------------------------------------------------------------------------------------------- | ------ | ----- |
+| allsecured | 21  | The field is 1 when all currently selected hart are secured and not running in debuggable privilege levels | R/W    | 0     |
+| anysecured | 20  | The field is 1 when any currently selected hart is secured and not running in debuggable privilege levels  | R/W    | 0     |
+
+> 💡 The debugger could discover the debugability of the hart by allsecured/anysecured.
+
 ### Non-debug-module reset 
 
 ndmreset is a feature to reset the whole system except DM. This may become an attack surface if it is not carefully designed and analyzed in threat model. 
@@ -126,7 +140,7 @@ A example is that OEM adversaries can use ndmreset to reset the entire SOC when 
 
 It is recommended that SOC vendors do not implement ndmreset, or use a life-cycle fuse to disable ndmreset. 
 
-### Debugger access memory
+### Debugger memory access
 
 Debugger accessing memory via System Bus Access block shall always be checked by IOPMP, WG, or other equivalent hardware protection mechanism.
 
@@ -135,9 +149,9 @@ Debugger accessing memory via System Bus Access block shall always be checked by
 - Add a new cause in cmderr (6, previously reserved) to indicate a security fault. 
 - Add a new cause in sberror (6, previously reserved) to indicate a security fault in DM system bus. 
 
-Abstract commands, halt reqeusts or reset request that violate debug security protections will set cmderr to 6 (security fault). 
+Abstract commands, halt requests or reset request that violate debug security protections will set cmderr to 6 (security fault). 
 
-Exceptions due to privilege violation (e.g. accessing M mode resource with S mode privilege) will set cmderr to 3 (exception). 
+Exceptions due to privilege violation (e.g., accessing M mode resource with S mode privilege) will set cmderr to 3 (exception). 
 
 When the System Bus Access is denied by IOPMP, WG, etc., the sberror is set to 6 (security fault).
 
